@@ -1,39 +1,70 @@
 #!/usr/bin/env node
-"use strict";
 
-const { Command } = require("commander");
-const {
+import { Command } from "commander";
+import {
   PRESETS,
   infoCommands,
-  loadProfile,
+  keyCountForModel,
   presetCommand,
-  profileToCommands,
   stringToMacroCommand,
   stringToTypeCommands,
-} = require("./protocol");
-const {
+} from "./commands";
+import { charCount, textToKeyPlan } from "./keymap";
+import {
   DEFAULT_BAUD_RATE,
   DEFAULT_PRODUCT_ID,
   DEFAULT_VENDOR_ID,
   createSerialClient,
-} = require("./serial");
+} from "./serial";
+import { runInteractive } from "./tui";
+
+const VERSION = "0.1.0";
+
+type GlobalOptions = {
+  port?: string;
+  model?: string;
+  vid: string;
+  pid: string;
+  baud: string;
+};
+
+type MacroOptions = {
+  key: string;
+  macro: string;
+  delay: string;
+  repeat: string;
+  layer: string;
+};
+
+type TypeOptions = Omit<MacroOptions, "key" | "macro">;
 
 async function main(argv = process.argv) {
   const program = new Command();
   program
-    .name("hanlinyue-free2")
-    .description("Program a Hanlinyue Free2 macro keyboard over USB serial.")
-    .version("0.1.0")
+    .name("macropad-cfg")
+    .description("Set text to type on a Hanlinyue macro keyboard.")
+    .version(VERSION)
     .option("--port <path>", "serial port path")
+    .option("--model <Free2|Free3>", "override detected device model")
     .option("--vid <hex>", "USB vendor ID", DEFAULT_VENDOR_ID)
     .option("--pid <hex>", "USB product ID", DEFAULT_PRODUCT_ID)
     .option("--baud <rate>", "serial baud rate", String(DEFAULT_BAUD_RATE));
+
+  program.action(async () => {
+    const options = program.opts() as GlobalOptions;
+    await runInteractive({
+      client: buildClient(program),
+      model: options.model,
+      port: options.port,
+      version: VERSION,
+    });
+  });
 
   program
     .command("list")
     .description("List Hanlinyue Free2 serial ports.")
     .option("--all", "show all serial ports")
-    .action(async (options) => {
+    .action(async (options: { all?: boolean }) => {
       const client = buildClient(program);
       const ports = await client.listPorts({ all: options.all });
       if (ports.length === 0) {
@@ -49,7 +80,7 @@ async function main(argv = process.argv) {
     .command("info")
     .description("Read model, battery, firmware, and MAC info.")
     .option("--timeout <ms>", "read timeout after writes", "1200")
-    .action(async (options) => {
+    .action(async (options: { timeout: string }) => {
       const client = buildClient(program);
       const messages = await client.requestInfo(infoCommands(), {
         port: program.opts().port,
@@ -71,25 +102,12 @@ async function main(argv = process.argv) {
   program
     .command("preset <name>")
     .description(`Apply a Free2 preset: ${Array.from(PRESETS).join(", ")}`)
-    .action(async (name) => {
+    .action(async (name: string) => {
       const client = buildClient(program);
       await client.sendCommand(presetCommand(name), {
         port: program.opts().port,
       });
       console.log(`Preset applied: ${name}`);
-    });
-
-  program
-    .command("apply <profile>")
-    .description("Apply a YAML or JSON profile.")
-    .action(async (profilePath) => {
-      const client = buildClient(program);
-      const profile = loadProfile(profilePath);
-      const commands = profileToCommands(profile);
-      const results = await client.sendCommands(commands, {
-        port: program.opts().port,
-      });
-      console.log(`Applied ${results.length} command(s).`);
     });
 
   program
@@ -108,7 +126,7 @@ async function main(argv = process.argv) {
       "target layer: click, doubleclick, or longpress",
       "click",
     )
-    .action(async (options) => {
+    .action(async (options: MacroOptions) => {
       const client = buildClient(program);
       const command = stringToMacroCommand(options.macro, {
         key: options.key,
@@ -125,7 +143,7 @@ async function main(argv = process.argv) {
   program
     .command("type <text>")
     .description(
-      "Type a string across both keys (splits to fit 5-press limit, optimizes shift).",
+      "Type a string across the device keys within the 15-event limit.",
     )
     .option(
       "-d, --delay <ms>",
@@ -138,34 +156,29 @@ async function main(argv = process.argv) {
       "target layer: click, doubleclick, or longpress",
       "click",
     )
-    .action(async (text, options) => {
+    .action(async (text: string, options: TypeOptions) => {
       const client = buildClient(program);
+      const keyCount = keyCountForModel(program.opts().model || "Free2");
+      const plan = textToKeyPlan(text, keyCount);
       const commands = stringToTypeCommands(text, {
         delay: options.delay,
         repeat: options.repeat,
         layer: options.layer,
+        keyCount,
       });
       const results = await client.sendCommands(commands, {
         port: program.opts().port,
       });
-      const chars = Array.from(text);
-      const key1Count = commands[0]
-        ? commands[0].v.filter((e) => e.t === "down" && e.k !== "Shift").length
-        : 0;
-      const key2Count = commands[1]
-        ? commands[1].v.filter((e) => e.t === "down" && e.k !== "Shift").length
-        : 0;
       console.log(
-        `Type: ${chars.length} char(s) across ${results.length} key(s) — ` +
-          `key1: "${chars.slice(0, key1Count).join("")}", ` +
-          `key2: "${chars.slice(key1Count).join("")}"`,
+        `Type: ${charCount(text)} char(s) across ${results.length} key(s) — ` +
+          plan.keys.map((key) => `key${key.key}: "${key.text}"`).join(", "),
       );
     });
 
   program
     .command("raw <json>")
     .description("Send a raw JSON command.")
-    .action(async (json) => {
+    .action(async (json: string) => {
       const client = buildClient(program);
       await client.sendCommand(JSON.parse(json), { port: program.opts().port });
       console.log("Raw command sent.");
@@ -174,13 +187,13 @@ async function main(argv = process.argv) {
   try {
     await program.parseAsync(argv);
   } catch (error) {
-    console.error(`Error: ${error.message}`);
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   }
 }
 
-function buildClient(program) {
-  const options = program.opts();
+function buildClient(program: Command) {
+  const options = program.opts() as GlobalOptions;
   return createSerialClient({
     vendorId: options.vid,
     productId: options.pid,
@@ -188,7 +201,12 @@ function buildClient(program) {
   });
 }
 
-function formatPort(port) {
+function formatPort(port: {
+  path: string;
+  vendorId?: string;
+  productId?: string;
+  manufacturer?: string;
+}) {
   const details = [
     port.path,
     `VID=${port.vendorId || "-"}`,
@@ -204,7 +222,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = {
+export {
   main,
   formatPort,
 };

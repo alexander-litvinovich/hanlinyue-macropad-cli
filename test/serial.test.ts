@@ -1,28 +1,32 @@
 "use strict";
 
-const assert = require("node:assert/strict");
-const test = require("node:test");
+import { expect, test } from "vitest";
+import {
+  createSerialClient,
+  parseJsonObjects,
+  type SerialPortLike,
+  type SerialPortLikeCtor,
+} from "../src/serial";
 const { MockBinding } = require("@serialport/binding-mock");
 const { SerialPortStream } = require("@serialport/stream");
-const { createSerialClient, parseJsonObjects } = require("../src/serial");
-const {
-  makeSegments,
-  presetCommand,
-  profileToCommands,
-  stringToMacroCommand,
-} = require("../src/protocol");
+import { presetCommand, stringToMacroCommand } from "../src/commands";
+import { makeSegments } from "../src/wire";
 
 function createMockBinding() {
   MockBinding.reset();
-  const instances = [];
+  const instances: any[] = [];
   class MockSerialPort extends SerialPortStream {
-    constructor(options, callback) {
+    static list = MockBinding.list;
+
+    constructor(options: any, callback?: any) {
       super({ ...options, binding: MockBinding }, callback);
       instances.push(this);
     }
   }
-  MockSerialPort.list = MockBinding.list;
-  return { MockSerialPort, instances };
+  return {
+    MockSerialPort: MockSerialPort as unknown as SerialPortLikeCtor,
+    instances,
+  };
 }
 
 const FAST_SERIAL_OPTS = {
@@ -33,11 +37,15 @@ const FAST_SERIAL_OPTS = {
 };
 
 function createFlakyWriteBinding() {
-  const writes = [];
-  const instances = [];
+  const writes: Buffer[] = [];
+  const instances: FlakySerialPort[] = [];
   let firstWrite = true;
-  class FlakySerialPort {
-    constructor(options) {
+  class FlakySerialPort implements SerialPortLike {
+    path: string;
+    baudRate: number;
+    isOpen = false;
+
+    constructor(options: { path: string; baudRate: number }) {
       this.path = options.path;
       this.baudRate = options.baudRate;
       this.isOpen = false;
@@ -48,23 +56,24 @@ function createFlakyWriteBinding() {
       return [{ path: "/dev/free2", vendorId: "4C4A", productId: "4155" }];
     }
 
-    on() {}
+    on(_event: string, _callback: (...args: any[]) => void) {}
 
-    open(callback) {
+    open(callback: (error?: Error | null) => void) {
       this.isOpen = true;
       callback();
     }
 
-    close(callback) {
+    close(callback: (error?: Error | null) => void) {
       this.isOpen = false;
       callback();
     }
 
-    write(data, callback) {
+    write(data: string, callback: (error?: Error | null) => void) {
       if (firstWrite) {
         firstWrite = false;
-        const error = new Error("no such device or address");
-        error.code = "ENXIO";
+        const error = Object.assign(new Error("no such device or address"), {
+          code: "ENXIO",
+        });
         callback(error);
         return;
       }
@@ -72,7 +81,7 @@ function createFlakyWriteBinding() {
       callback();
     }
 
-    drain(callback) {
+    drain(callback: (error?: Error | null) => void) {
       callback();
     }
   }
@@ -80,11 +89,15 @@ function createFlakyWriteBinding() {
 }
 
 function createFlakyOpenBinding() {
-  const writes = [];
-  const instances = [];
+  const writes: Buffer[] = [];
+  const instances: FlakyOpenSerialPort[] = [];
   let firstOpen = true;
-  class FlakyOpenSerialPort {
-    constructor(options) {
+  class FlakyOpenSerialPort implements SerialPortLike {
+    path: string;
+    baudRate: number;
+    isOpen = false;
+
+    constructor(options: { path: string; baudRate: number }) {
       this.path = options.path;
       this.baudRate = options.baudRate;
       this.isOpen = false;
@@ -95,9 +108,9 @@ function createFlakyOpenBinding() {
       return [{ path: "/dev/free2", vendorId: "4C4A", productId: "4155" }];
     }
 
-    on() {}
+    on(_event: string, _callback: (...args: any[]) => void) {}
 
-    open(callback) {
+    open(callback: (error?: Error | null) => void) {
       if (firstOpen) {
         firstOpen = false;
         callback(
@@ -109,17 +122,17 @@ function createFlakyOpenBinding() {
       callback();
     }
 
-    close(callback) {
+    close(callback: (error?: Error | null) => void) {
       this.isOpen = false;
       callback();
     }
 
-    write(data, callback) {
+    write(data: string, callback: (error?: Error | null) => void) {
       writes.push(Buffer.from(data));
       callback();
     }
 
-    drain(callback) {
+    drain(callback: (error?: Error | null) => void) {
       callback();
     }
   }
@@ -130,11 +143,11 @@ test("parses adjacent JSON objects from serial data", () => {
   const parsed = parseJsonObjects(
     'noise{"o":"getresult","t":"model","v":"Free2"}{"o":"x"}tail',
   );
-  assert.deepEqual(parsed.objects, [
+  expect(parsed.objects).toEqual([
     { o: "getresult", t: "model", v: "Free2" },
     { o: "x" },
   ]);
-  assert.equal(parsed.rest, "");
+  expect(parsed.rest).toBe("");
 });
 
 test("lists matching ports only", async () => {
@@ -144,10 +157,7 @@ test("lists matching ports only", async () => {
 
   const client = createSerialClient({ Binding: MockSerialPort });
   const ports = await client.listPorts();
-  assert.deepEqual(
-    ports.map((port) => port.path),
-    ["/dev/free2"],
-  );
+  expect(ports.map((port: any) => port.path)).toEqual(["/dev/free2"],);
 });
 
 test("lists Jieli usbmodem port when USB IDs are missing", async () => {
@@ -160,10 +170,7 @@ test("lists Jieli usbmodem port when USB IDs are missing", async () => {
   const client = createSerialClient({ Binding: MockSerialPort });
   const ports = await client.listPorts();
 
-  assert.deepEqual(
-    ports.map((port) => port.path),
-    ["/dev/tty.usbmodem1"],
-  );
+  expect(ports.map((port: any) => port.path)).toEqual(["/dev/tty.usbmodem1"],);
 });
 
 test("does not match unrelated usbmodem ports without IDs or Jieli manufacturer", async () => {
@@ -173,7 +180,7 @@ test("does not match unrelated usbmodem ports without IDs or Jieli manufacturer"
   const client = createSerialClient({ Binding: MockSerialPort });
   const ports = await client.listPorts();
 
-  assert.deepEqual(ports, []);
+  expect(ports).toEqual([]);
 });
 
 test("prefers macOS cu device path for outgoing serial connections", async () => {
@@ -185,13 +192,10 @@ test("prefers macOS cu device path for outgoing serial connections", async () =>
 
   const client = createSerialClient({
     Binding: MockSerialPort,
-    pathExists: (candidate) => candidate === "/dev/cu.usbmodem1",
+    pathExists: (candidate: string) => candidate === "/dev/cu.usbmodem1",
   });
 
-  assert.equal(
-    await client.findPort("/dev/tty.usbmodem1"),
-    "/dev/cu.usbmodem1",
-  );
+  expect(await client.findPort("/dev/tty.usbmodem1")).toBe("/dev/cu.usbmodem1",);
 });
 
 test("auto-detects the single matching port", async () => {
@@ -200,7 +204,7 @@ test("auto-detects the single matching port", async () => {
 
   const client = createSerialClient({ Binding: MockSerialPort });
 
-  assert.equal(await client.findPort(), "/dev/free2");
+  expect(await client.findPort()).toBe("/dev/free2");
 });
 
 test("raw command writes expected bytes to mock port", async () => {
@@ -214,10 +218,7 @@ test("raw command writes expected bytes to mock port", async () => {
   const client = createSerialClient({ Binding: MockSerialPort });
   await client.sendCommand({ o: "get", t: "model" }, FAST_SERIAL_OPTS);
 
-  assert.equal(
-    instances[0].port.lastWrite.toString("utf8"),
-    '{"o":"get","t":"model"}',
-  );
+  expect(instances[0].port.lastWrite.toString("utf8")).toBe('{"o":"get","t":"model"}',);
 });
 
 test("preset command writes expected bytes to mock port", async () => {
@@ -231,37 +232,7 @@ test("preset command writes expected bytes to mock port", async () => {
   const client = createSerialClient({ Binding: MockSerialPort });
   await client.sendCommand(presetCommand("keyboard_lr"), FAST_SERIAL_OPTS);
 
-  assert.equal(
-    instances[0].port.lastWrite.toString("utf8"),
-    '{"o":"set","m":"preset","v":"keyboard_lr"}',
-  );
-});
-
-test("apply-style command list writes commands in order", async () => {
-  const { MockSerialPort, instances } = createMockBinding();
-  MockBinding.createPort("/dev/free2", {
-    vendorId: "4C4A",
-    productId: "4155",
-    record: true,
-  });
-  const client = createSerialClient({ Binding: MockSerialPort });
-  const commands = profileToCommands({
-    model: "Free2",
-    keys: [
-      { key: 1, layer: "click", type: "phone", action: "home" },
-      { key: 2, layer: "click", type: "phone", action: "swipe_up" },
-    ],
-  });
-
-  await client.sendCommands(commands, FAST_SERIAL_OPTS);
-
-  assert.equal(
-    instances[0].port.recording.toString("utf8"),
-    [
-      '{"o":"set","k":1,"m":"mouse","e":"click","v":"home","r":1}',
-      '{"o":"set","k":2,"m":"mouse","e":"click","v":"slideup","r":1}',
-    ].join(""),
-  );
+  expect(instances[0].port.lastWrite.toString("utf8")).toBe('{"o":"set","m":"preset","v":"keyboard_lr"}',);
 });
 
 test("plain text macro command writes expected bytes to mock port", async () => {
@@ -279,11 +250,11 @@ test("plain text macro command writes expected bytes to mock port", async () => 
   const warmup = '{"o":"get","t":"model"}';
   const expected =
     warmup + Buffer.concat(makeSegments(command, 1).segments).toString("utf8");
-  assert.equal(instances[0].port.recording.toString("utf8"), expected);
-  assert.match(expected, /"k":2/);
-  assert.match(expected, /"k":"\["/);
-  assert.match(expected, /"k":"e"/);
-  assert.match(expected, /"k":"q"/);
+  expect(instances[0].port.recording.toString("utf8")).toBe(expected);
+  expect(expected).toMatch(/"k":2/);
+  expect(expected).toMatch(/"k":"\["/);
+  expect(expected).toMatch(/"k":"e"/);
+  expect(expected).toMatch(/"k":"q"/);
 });
 
 test("retries a transient ENXIO write by reopening the port", async () => {
@@ -299,9 +270,9 @@ test("retries a transient ENXIO write by reopening the port", async () => {
     },
   );
 
-  assert.equal(instances.length, 2);
-  assert.equal(writes.length, 1);
-  assert.equal(writes[0].toString("utf8"), '{"o":"get","t":"model"}');
+  expect(instances.length).toBe(2);
+  expect(writes.length).toBe(1);
+  expect(writes[0].toString("utf8")).toBe('{"o":"get","t":"model"}');
 });
 
 test("retries a transient open error by reopening the port", async () => {
@@ -317,7 +288,7 @@ test("retries a transient open error by reopening the port", async () => {
     },
   );
 
-  assert.equal(instances.length, 2);
-  assert.equal(writes.length, 1);
-  assert.equal(writes[0].toString("utf8"), '{"o":"get","t":"model"}');
+  expect(instances.length).toBe(2);
+  expect(writes.length).toBe(1);
+  expect(writes[0].toString("utf8")).toBe('{"o":"get","t":"model"}');
 });

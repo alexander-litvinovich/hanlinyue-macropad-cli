@@ -1,0 +1,38 @@
+{
+  "name": "macropad-cfg",
+  "version": "0.1.0",
+  "description": "Terminal utility for programming Hanlinyue Free2 macro keyboards over USB serial.",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "macropad-cfg": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexander-litvinovich/hanlinyue-macropad-cli.git"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "serialport": "^12.0.0",
+    "usb": "^3.0.0"
+  },
+  "devDependencies": {
+    "@serialport/binding-mock": "^10.2.2",
+    "@serialport/stream": "^12.0.0",
+    "@types/node": "^20.19.33",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
