@@ -1,0 +1,37 @@
+model: Free2
+keys:
+  - key: 1
+    layer: click
+    shift: P
+    type: macro
+    repeat: 1
+    events:
+      - { t: down, k: P, c: 80 }
+      - { t: up, k: P, c: 80 }
+      - { t: wait, ms: 30 }
+      - { t: down, k: O, c: 79 }
+      - { t: up, k: O, c: 79 }
+      - { t: wait, ms: 30 }
+      - { t: down, k: I, c: 73 }
+      - { t: up, k: I, c: 73 }
+      - { t: wait, ms: 30 }
+      - { t: down, k: U, c: 85 }
+      - { t: up, k: U, c: 85 }
+      - { t: wait, ms: 30 }
+      - { t: down, k: Y, c: 89 }
+      - { t: up, k: Y, c: 89 }
+      - { t: wait, ms: 30 }
+      - { t: down, k: T, c: 84 }
+      - { t: up, k: T, c: 84 }
+      - { t: wait, ms: 30 }
+      - { t: down, k: R, c: 82 }
+      - { t: up, k: R, c: 82 }
+      - { t: wait, ms: 30 }
+      - { t: down, k: E, c: 69 }
+      - { t: up, k: E, c: 69 }
+      - { t: wait, ms: 30 }
+      - { t: down, k: W, c: 87 }
+      - { t: up, k: W, c: 87 }
+      - { t: wait, ms: 30 }
+      - { t: down, k: Q, c: 81 }
+      - { t: up, k: Q, c: 81 }
