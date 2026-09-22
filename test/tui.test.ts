@@ -1,5 +1,10 @@
 import { expect, test } from "vitest";
-import { buildDeviceDrawing, buildInfoPanel, probeConnection } from "../src/tui";
+import {
+	buildDeviceDrawing,
+	buildInfoPanel,
+	probeConnection,
+	validationMessage,
+} from "../src/tui";
 
 function stubClient(listPorts: () => Promise<{ path: string }[]>) {
 	return { listPorts } as never;
@@ -57,6 +62,7 @@ test("sizes the info panel to its longest line", () => {
     model: "Free2",
     keyCount: 2,
     battery: "20/100%",
+    connected: true,
   });
 
   expect(panel).toEqual([
@@ -66,4 +72,32 @@ test("sizes the info panel to its longest line", () => {
     "│ Battery: 20/100%                     │",
     "└──────────────────────────────────────┘",
   ]);
+});
+
+test("reports a disconnected macropad instead of the assumed model", () => {
+  const panel = buildInfoPanel({
+    version: "0.1.0",
+    model: "Free2",
+    keyCount: 2,
+    battery: "unknown",
+    connected: false,
+  });
+
+  expect(panel).toEqual([
+    "┌───────────────────────────────┐",
+    "│ Macropad Configurator v.0.1.0 │",
+    "│ Model: disconnected           │",
+    "│ Battery: disconnected         │",
+    "└───────────────────────────────┘",
+  ]);
+});
+
+test("hides the empty-text validation message before text is entered", () => {
+	expect(validationMessage("", "Enter at least one character.", false)).toBe("");
+});
+
+test("shows the empty-text validation message after text is cleared", () => {
+	expect(validationMessage("", "Enter at least one character.", true)).toBe(
+		"Enter at least one character.",
+	);
 });

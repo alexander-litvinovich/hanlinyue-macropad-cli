@@ -18,7 +18,7 @@ import {
 } from "./serial";
 import { runInteractive } from "./tui";
 
-const VERSION = "0.1.0";
+const { version: VERSION } = require("../package.json") as { version: string };
 
 type GlobalOptions = {
   port?: string;

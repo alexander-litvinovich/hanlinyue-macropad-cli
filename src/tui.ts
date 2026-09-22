@@ -18,7 +18,11 @@ const DISCONNECTED = "Macropad not connected.";
 
 type SerialClient = ReturnType<typeof createSerialClient>;
 type DeviceInfo = { model: string; battery: string };
-type InfoPanelOptions = DeviceInfo & { keyCount: number; version: string };
+type InfoPanelOptions = DeviceInfo & {
+	keyCount: number;
+	version: string;
+	connected: boolean;
+};
 type Connection = { connected: boolean; path?: string };
 
 type EditorOptions = {
@@ -102,7 +106,7 @@ async function resolveDeviceInfo(
 		const battery = valueFor("battery");
 		return {
 			model,
-			battery: battery === undefined ? "unknown" : String(battery),
+			battery: battery === undefined ? "unknown" : `${battery}%`,
 		};
 	} catch {
 		return { model: override || "Free2", battery: "unknown" };
@@ -132,8 +136,10 @@ function buildDeviceDrawing(keyCount: number): string[] {
 function buildInfoPanel(options: InfoPanelOptions): string[] {
 	const content = [
 		`Macropad Configurator v.${options.version}`,
-		`Model: ${options.model}, ${options.keyCount} keys, ${MAX_EVENTS_PER_KEY} events each`,
-		`Battery: ${options.battery}`,
+		options.connected
+			? `Model: ${options.model}, ${options.keyCount} keys, ${MAX_EVENTS_PER_KEY} events each`
+			: "Model: disconnected",
+		`Battery: ${options.connected ? options.battery : "disconnected"}`,
 	];
 	const width = Math.max(...content.map((line) => line.length));
 	return [
@@ -152,9 +158,7 @@ function renderInfoPanel(lines: string[]): string[] {
 	});
 }
 
-function renderHeader(
-	options: InfoPanelOptions & { connected: boolean },
-): string[] {
+function renderHeader(options: InfoPanelOptions): string[] {
 	const device = buildDeviceDrawing(options.keyCount);
 	const panel = renderInfoPanel(buildInfoPanel(options));
 	const deviceColor = options.connected ? BRIGHT_GREEN : BRIGHT_GREY;
@@ -164,6 +168,14 @@ function renderHeader(
 		const panelLine = panel[index - 1];
 		return panelLine ? `${coloredDevice}${gap}${panelLine}` : coloredDevice;
 	});
+}
+
+function validationMessage(
+	error: string,
+	message: string,
+	hasEnteredText: boolean,
+): string {
+	return error || (hasEnteredText ? message : "");
 }
 
 function editText(options: EditorOptions): Promise<string> {
@@ -180,6 +192,7 @@ function editText(options: EditorOptions): Promise<string> {
 		let text = "";
 		let cursor = 0;
 		let error = "";
+		let hasEnteredText = false;
 		let confirming = false;
 		let connection = options.connection;
 
@@ -239,7 +252,14 @@ function editText(options: EditorOptions): Promise<string> {
 			const status = confirming
 				? { color: WHITE, text: "Write this text? [y/N]" }
 				: !result.valid
-					? { color: RED, text: error || result.message }
+					? {
+							color: RED,
+							text: validationMessage(
+								error,
+								result.message,
+								hasEnteredText,
+							),
+						}
 					: connection.connected
 						? { color: WHITE, text: "Enter writes, Esc cancels." }
 						: { color: RED, text: DISCONNECTED };
@@ -333,6 +353,7 @@ function editText(options: EditorOptions): Promise<string> {
 			} else if (input && !key.ctrl && !key.meta) {
 				text = `${text.slice(0, cursor)}${input}${text.slice(cursor)}`;
 				cursor += input.length;
+				hasEnteredText = true;
 			}
 			render();
 		});
@@ -345,4 +366,5 @@ export {
 	probeConnection,
 	runInteractive,
 	resolveDeviceInfo,
+	validationMessage,
 };

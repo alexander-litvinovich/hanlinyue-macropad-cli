@@ -43,7 +43,8 @@ function presetCommand(name: string): Command {
 }
 
 function keyCountForModel(model: unknown): number {
-  const normalized = String(model);
+  // Firmware reports the model with a space ("Free 2").
+  const normalized = String(model).replace(/\s+/g, "");
   const keyCount = MODEL_KEY_COUNTS[normalized];
   if (!keyCount) {
     throw new Error(

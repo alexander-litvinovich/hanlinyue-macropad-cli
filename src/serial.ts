@@ -49,6 +49,7 @@ import { makeSegments } from "./wire";
 const DEFAULT_VENDOR_ID = "4C4A";
 const DEFAULT_PRODUCT_ID = "4155";
 const DEFAULT_BAUD_RATE = 460800;
+const INFO_ATTEMPTS = 3;
 
 function normalizeHex(value: unknown): string {
   return String(value || "")
@@ -211,18 +212,35 @@ function createSerialClient(options: SerialClientOptions = {}) {
         messages.push(...parsed.objects);
       });
 
-      for (const command of commands) {
-        const result = makeSegments(command, sequenceNumber);
-        sequenceNumber = result.nextSequenceNumber;
-        for (const segment of result.segments) {
-          await writeData(port, segment);
-          await delay(10);
+      const answered = () =>
+        new Set(
+          messages
+            .filter((message) => message.o === "getresult")
+            .map((message) => message.t),
+        );
+
+      // The device silently drops queries, especially right after a fresh port
+      // open, so resend whatever has not been answered yet.
+      for (let attempt = 0; attempt < INFO_ATTEMPTS; attempt += 1) {
+        const pending = commands.filter(
+          (command) => !answered().has(command.t),
+        );
+        if (pending.length === 0) {
+          break;
         }
-        await delay(100);
+        for (const command of pending) {
+          const result = makeSegments(command, sequenceNumber);
+          sequenceNumber = result.nextSequenceNumber;
+          for (const segment of result.segments) {
+            await writeData(port, segment);
+            await delay(10);
+          }
+          await delay(100);
+        }
+        await delay(timeoutMs);
       }
 
-      await delay(timeoutMs);
-      return messages;
+      return dedupeResults(messages);
     }, opts);
   }
 
@@ -353,6 +371,17 @@ function parseJsonObjects(input: string): { objects: Command[]; rest: string } {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function dedupeResults(messages: Command[]): Command[] {
+  const seen = new Set<unknown>();
+  return messages.filter((message) => {
+    if (message.o !== "getresult" || seen.has(message.t)) {
+      return message.o !== "getresult";
+    }
+    seen.add(message.t);
+    return true;
+  });
 }
 
 async function warmup(port: SerialPortLike): Promise<void> {

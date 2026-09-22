@@ -62,5 +62,6 @@ test("creates type commands for all three Free3 keys", () => {
 test("maps supported models to the correct key counts", () => {
   expect(keyCountForModel("Free2")).toBe(2);
   expect(keyCountForModel("Free3")).toBe(3);
+  expect(keyCountForModel("Free 2")).toBe(2);
   expect(() => keyCountForModel("Free99")).toThrow(/Unsupported model/);
 });
