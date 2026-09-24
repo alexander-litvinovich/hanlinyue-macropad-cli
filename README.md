@@ -4,7 +4,14 @@ Program a Hanlinyue Free2 or Free3 macro keyboard over USB serial.
 
 Close `hanlinyue.app` first. Only one process can hold the device port.
 
-## Install
+## Install and run
+
+Run once:
+
+```bash
+npx github:alexander-litvinovich/hanlinyue-macropad-cli
+```
+Installing:
 
 ```bash
 npm install -g github:alexander-litvinovich/hanlinyue-macropad-cli
